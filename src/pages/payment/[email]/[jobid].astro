@@ -1,0 +1,68 @@
+---
+import { app } from "../../../firebase/server";
+import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+
+function delay(ms: number) {
+    return new Promise( resolve => setTimeout(resolve, ms) );
+}
+
+interface PaymentSession{
+  error: Error,
+  url: string,
+}
+
+const { email, jobid } = Astro.params;
+
+if (!jobid) {
+  return Astro.redirect("/404");
+}
+
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+var uid = "undefined"
+
+//check whether user with that email already exists, if yes, get the uid
+try {
+  const userRecord = await auth.getUserByEmail(email)
+  uid = userRecord.uid
+ } catch {
+  const r = await auth.createUser({
+                  uid: jobid,
+                  email,
+                  password: jobid,
+              });
+
+  uid = jobid
+}
+
+//update add userid to job 
+await db.collection('jobs').doc(jobid).update({
+  userid: uid,
+  email
+})
+
+const docRef = await db.collection('customers-test').doc(uid).collection('checkout_sessions') //prod customers testin customers-test
+.add({
+    mode: 'payment',
+    price: 'price_1PaYmGRxHP3Z5Pf7ULvtYFPS', //prod price_1ObVkBDwvqWM7VkQc9xYIJAC testing price_1OcUrMDwvqWM7VkQeYAvG5iU
+    success_url: Astro.url.origin + "/payment/success",
+    cancel_url: Astro.url.origin + "",
+})
+
+const snap = await docRef.get()
+var session = snap.data() as PaymentSession
+
+while (!session.url){
+
+  await delay(250)
+
+  const snap = await docRef.get()
+  var session = snap.data() as PaymentSession
+
+}
+
+---
+
+<meta http-equiv="Refresh" content=`0; url='${session.url}'` />
